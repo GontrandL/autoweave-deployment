@@ -1,0 +1,135 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: memgraph-service
+  namespace: autoweave-memory
+  labels:
+    app: memgraph
+    component: memory
+spec:
+  type: ClusterIP
+  ports:
+    - port: 7687
+      targetPort: 7687
+      protocol: TCP
+      name: bolt
+    - port: 3000
+      targetPort: 3000
+      protocol: TCP
+      name: web
+  selector:
+    app: memgraph
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: memgraph-pvc
+  namespace: autoweave-memory
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+  storageClassName: standard
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: memgraph-config
+  namespace: autoweave-memory
+data:
+  memgraph.conf: |
+    --log-level=INFO
+    --also-log-to-stderr
+    --storage-recover-on-startup=true
+
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: memgraph
+  namespace: autoweave-memory
+  labels:
+    app: memgraph
+spec:
+  serviceName: memgraph-service
+  replicas: 1
+  selector:
+    matchLabels:
+      app: memgraph
+  template:
+    metadata:
+      labels:
+        app: memgraph
+    spec:
+      containers:
+      - name: memgraph
+        image: memgraph/memgraph:latest
+        ports:
+        - containerPort: 7687
+          name: bolt
+        - containerPort: 3000
+          name: web
+        env:
+        - name: MEMGRAPH_USER
+          value: "memgraph"
+        - name: MEMGRAPH_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: memgraph-secret
+              key: password
+              optional: true
+        command: ["memgraph"]
+        args: ["--log-level=INFO", "--also-log-to-stderr", "--storage-recover-on-startup=true"]
+        volumeMounts:
+        - name: memgraph-storage
+          mountPath: /var/lib/memgraph
+        - name: memgraph-log
+          mountPath: /var/log/memgraph
+        resources:
+          requests:
+            memory: "1Gi"
+            cpu: "500m"
+          limits:
+            memory: "4Gi"
+            cpu: "2000m"
+        livenessProbe:
+          tcpSocket:
+            port: 7687
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          tcpSocket:
+            port: 7687
+          initialDelaySeconds: 10
+          periodSeconds: 5
+  volumeClaimTemplates:
+  - metadata:
+      name: memgraph-storage
+    spec:
+      accessModes:
+        - ReadWriteOnce
+      resources:
+        requests:
+          storage: 10Gi
+  - metadata:
+      name: memgraph-log
+    spec:
+      accessModes:
+        - ReadWriteOnce
+      resources:
+        requests:
+          storage: 5Gi
+
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: memgraph-secret
+  namespace: autoweave-memory
+type: Opaque
+stringData:
+  password: memgraph
