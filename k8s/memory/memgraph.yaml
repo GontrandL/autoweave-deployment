@@ -67,10 +67,10 @@ spec:
     spec:
       securityContext:
         fsGroup: 1000
-        runAsNonRoot: true
+        runAsNonRoot: false
       containers:
       - name: memgraph
-        image: memgraph/memgraph:latest
+        image: memgraph/memgraph:2.11.1
         ports:
         - containerPort: 7687
           name: bolt
@@ -86,16 +86,29 @@ spec:
               key: password
               optional: true
         command: ["/usr/lib/memgraph/memgraph"]
-        args: ["--log-level=INFO", "--also-log-to-stderr", "--storage-recover-on-startup=true", "--telemetry-enabled=false"]
+        args: [
+          "--log-level=INFO",
+          "--also-log-to-stderr",
+          "--storage-recover-on-startup=true",
+          "--telemetry-enabled=false",
+          "--storage-properties-on-edges=false",
+          "--storage-snapshot-interval-sec=0",
+          "--storage-wal-enabled=false",
+          "--query-execution-timeout-sec=0"
+        ]
         volumeMounts:
         - name: memgraph-storage
           mountPath: /var/lib/memgraph
         - name: memgraph-log
           mountPath: /var/log/memgraph
         securityContext:
-          runAsUser: 1000
-          runAsGroup: 1000
-          allowPrivilegeEscalation: false
+          runAsUser: 0
+          runAsGroup: 0
+          allowPrivilegeEscalation: true
+          capabilities:
+            add:
+              - SYS_NICE
+              - IPC_LOCK
         resources:
           requests:
             memory: "1Gi"

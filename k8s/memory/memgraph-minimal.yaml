@@ -1,0 +1,147 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: memgraph-service
+  namespace: autoweave-memory
+spec:
+  selector:
+    app: memgraph
+  ports:
+    - port: 7687
+      targetPort: 7687
+      name: bolt
+    - port: 3000
+      targetPort: 3000
+      name: web
+  type: ClusterIP
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: memgraph-config
+  namespace: autoweave-memory
+data:
+  memgraph.conf: |
+    --log-level=INFO
+    --also-log-to-stderr=true
+    --telemetry-enabled=false
+    --storage-recover-on-startup=false
+    --storage-properties-on-edges=false
+    --storage-snapshot-interval-sec=0
+    --storage-wal-enabled=false
+    --bolt-num-workers=1
+    --storage-gc-cycle-sec=180
+    --memory-limit=1073741824
+
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: memgraph-secret
+  namespace: autoweave-memory
+type: Opaque
+data:
+  password: YXV0b3dlYXZl  # autoweave
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: memgraph-minimal
+  namespace: autoweave-memory
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: memgraph
+  template:
+    metadata:
+      labels:
+        app: memgraph
+    spec:
+      initContainers:
+      - name: fix-permissions
+        image: busybox:1.35
+        command: ['sh', '-c']
+        args:
+          - |
+            mkdir -p /var/lib/memgraph /var/log/memgraph
+            chown -R 1000:1000 /var/lib/memgraph /var/log/memgraph
+            chmod -R 755 /var/lib/memgraph /var/log/memgraph
+            echo "Permissions fixed"
+        volumeMounts:
+        - name: memgraph-storage
+          mountPath: /var/lib/memgraph
+        - name: memgraph-log
+          mountPath: /var/log/memgraph
+        securityContext:
+          runAsUser: 0
+      containers:
+      - name: memgraph
+        image: memgraph/memgraph:2.11.1
+        ports:
+        - containerPort: 7687
+          name: bolt
+        - containerPort: 3000
+          name: web
+        env:
+        - name: MEMGRAPH_USER
+          value: "memgraph"
+        - name: MEMGRAPH_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: memgraph-secret
+              key: password
+              optional: true
+        command: ["/bin/bash", "-c"]
+        args:
+          - |
+            echo "Starting Memgraph with minimal configuration..."
+            /usr/lib/memgraph/memgraph \
+              --log-level=INFO \
+              --also-log-to-stderr \
+              --telemetry-enabled=false \
+              --storage-recover-on-startup=false \
+              --storage-properties-on-edges=false \
+              --storage-snapshot-interval-sec=0 \
+              --storage-wal-enabled=false \
+              --bolt-num-workers=1 \
+              --query-execution-timeout-sec=0 \
+              --memory-limit=1073741824 || \
+            (echo "Memgraph failed, trying fallback mode..." && \
+             /usr/lib/memgraph/memgraph --help && \
+             sleep infinity)
+        volumeMounts:
+        - name: memgraph-storage
+          mountPath: /var/lib/memgraph
+        - name: memgraph-log
+          mountPath: /var/log/memgraph
+        securityContext:
+          runAsUser: 1000
+          runAsGroup: 1000
+          allowPrivilegeEscalation: false
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+          limits:
+            memory: "1Gi"
+            cpu: "500m"
+        livenessProbe:
+          tcpSocket:
+            port: 7687
+          initialDelaySeconds: 60
+          periodSeconds: 30
+          failureThreshold: 10
+        readinessProbe:
+          tcpSocket:
+            port: 7687
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          failureThreshold: 5
+      volumes:
+      - name: memgraph-storage
+        emptyDir: {}
+      - name: memgraph-log
+        emptyDir: {}
