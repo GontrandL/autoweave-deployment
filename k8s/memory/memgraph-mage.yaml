@@ -3,48 +3,27 @@ kind: Service
 metadata:
   name: memgraph-service
   namespace: autoweave-memory
-  labels:
-    app: memgraph
-    component: memory
 spec:
-  type: ClusterIP
+  selector:
+    app: memgraph
   ports:
     - port: 7687
       targetPort: 7687
-      protocol: TCP
       name: bolt
     - port: 3000
       targetPort: 3000
-      protocol: TCP
       name: web
-  selector:
-    app: memgraph
+  type: ClusterIP
 
 ---
 apiVersion: v1
-kind: PersistentVolumeClaim
+kind: Secret
 metadata:
-  name: memgraph-pvc
+  name: memgraph-secret
   namespace: autoweave-memory
-spec:
-  accessModes:
-    - ReadWriteOnce
-  resources:
-    requests:
-      storage: 10Gi
-  storageClassName: standard
-
----
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: memgraph-config
-  namespace: autoweave-memory
+type: Opaque
 data:
-  memgraph.conf: |
-    --log-level=INFO
-    --also-log-to-stderr
-    --storage-recover-on-startup=true
+  password: YXV0b3dlYXZl  # autoweave
 
 ---
 apiVersion: apps/v1
@@ -52,8 +31,6 @@ kind: StatefulSet
 metadata:
   name: memgraph
   namespace: autoweave-memory
-  labels:
-    app: memgraph
 spec:
   serviceName: memgraph-service
   replicas: 1
@@ -65,12 +42,10 @@ spec:
       labels:
         app: memgraph
     spec:
-      securityContext:
-        fsGroup: 1000
-        runAsNonRoot: false
       containers:
       - name: memgraph
-        image: memgraph/memgraph:2.11.1
+        # Use memgraph-mage image which includes MAGE algorithms
+        image: memgraph/memgraph-mage:2.11.1
         ports:
         - containerPort: 7687
           name: bolt
@@ -85,43 +60,33 @@ spec:
               name: memgraph-secret
               key: password
               optional: true
-        # Use default entrypoint from image
-        # command is not specified to use the image's entrypoint
-        args: [
-          "--log-level=INFO",
-          "--also-log-to-stderr",
-          "--telemetry-enabled=false"
-        ]
+        # Don't override command, use image defaults
         volumeMounts:
         - name: memgraph-storage
           mountPath: /var/lib/memgraph
         - name: memgraph-log
           mountPath: /var/log/memgraph
-        securityContext:
-          runAsUser: 0
-          runAsGroup: 0
-          allowPrivilegeEscalation: true
-          capabilities:
-            add:
-              - SYS_NICE
-              - IPC_LOCK
         resources:
           requests:
             memory: "1Gi"
             cpu: "500m"
           limits:
-            memory: "4Gi"
-            cpu: "2000m"
+            memory: "2Gi"
+            cpu: "1000m"
         livenessProbe:
+          exec:
+            command:
+              - /bin/sh
+              - -c
+              - echo 'MATCH (n) RETURN count(n);' | mgconsole --host 127.0.0.1 --port 7687 || exit 1
+          initialDelaySeconds: 60
+          periodSeconds: 30
+          timeoutSeconds: 10
+        readinessProbe:
           tcpSocket:
             port: 7687
           initialDelaySeconds: 30
           periodSeconds: 10
-        readinessProbe:
-          tcpSocket:
-            port: 7687
-          initialDelaySeconds: 10
-          periodSeconds: 5
   volumeClaimTemplates:
   - metadata:
       name: memgraph-storage
@@ -138,14 +103,4 @@ spec:
         - ReadWriteOnce
       resources:
         requests:
-          storage: 5Gi
-
----
-apiVersion: v1
-kind: Secret
-metadata:
-  name: memgraph-secret
-  namespace: autoweave-memory
-type: Opaque
-stringData:
-  password: memgraph
+          storage: 2Gi

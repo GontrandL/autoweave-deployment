@@ -1,0 +1,45 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: memgraph-debug
+  namespace: autoweave-memory
+spec:
+  containers:
+  - name: memgraph-debug
+    image: memgraph/memgraph:latest
+    command: ["/bin/bash", "-c"]
+    args:
+      - |
+        echo "=== Memgraph Debug Pod ==="
+        echo "Searching for memgraph executable..."
+        echo ""
+        echo "1. Checking standard locations:"
+        ls -la /usr/bin/memgraph 2>/dev/null || echo "  - /usr/bin/memgraph: NOT FOUND"
+        ls -la /usr/local/bin/memgraph 2>/dev/null || echo "  - /usr/local/bin/memgraph: NOT FOUND"
+        ls -la /usr/lib/memgraph/memgraph 2>/dev/null || echo "  - /usr/lib/memgraph/memgraph: NOT FOUND"
+        ls -la /opt/memgraph/bin/memgraph 2>/dev/null || echo "  - /opt/memgraph/bin/memgraph: NOT FOUND"
+        echo ""
+        echo "2. Using find command:"
+        find / -name "memgraph" -type f 2>/dev/null | head -20
+        echo ""
+        echo "3. Checking PATH:"
+        echo "PATH=$PATH"
+        echo ""
+        echo "4. Checking entrypoint script:"
+        ls -la /entrypoint.sh 2>/dev/null || echo "  - /entrypoint.sh: NOT FOUND"
+        ls -la /docker-entrypoint.sh 2>/dev/null || echo "  - /docker-entrypoint.sh: NOT FOUND"
+        echo ""
+        echo "5. Contents of /usr/lib/memgraph (if exists):"
+        ls -la /usr/lib/memgraph/ 2>/dev/null || echo "  - Directory not found"
+        echo ""
+        echo "6. Trying to run memgraph directly:"
+        which memgraph 2>/dev/null || echo "  - memgraph not in PATH"
+        echo ""
+        echo "7. Package info:"
+        dpkg -L memgraph 2>/dev/null | grep -E "(bin|memgraph$)" | head -10 || echo "  - Package not found"
+        echo ""
+        echo "8. System info:"
+        cat /etc/os-release
+        echo ""
+        echo "Keeping pod alive for manual inspection..."
+        sleep infinity

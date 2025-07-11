@@ -1,0 +1,172 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: memgraph-service
+  namespace: autoweave-memory
+spec:
+  selector:
+    app: memgraph
+  ports:
+    - port: 7687
+      targetPort: 7687
+      name: bolt
+    - port: 3000
+      targetPort: 3000
+      name: web
+  type: ClusterIP
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: memgraph-entrypoint-config
+  namespace: autoweave-memory
+data:
+  start-memgraph.sh: |
+    #!/bin/bash
+    set -e
+    
+    echo "Starting Memgraph with custom entrypoint..."
+    
+    # Find memgraph executable
+    MEMGRAPH_EXEC=""
+    
+    # Check common locations
+    for loc in /usr/bin/memgraph /usr/local/bin/memgraph /opt/memgraph/bin/memgraph; do
+      if [ -x "$loc" ]; then
+        MEMGRAPH_EXEC="$loc"
+        break
+      fi
+    done
+    
+    # If not found, try using 'which'
+    if [ -z "$MEMGRAPH_EXEC" ]; then
+      MEMGRAPH_EXEC=$(which memgraph 2>/dev/null || true)
+    fi
+    
+    # If still not found, check if there's an entrypoint script
+    if [ -z "$MEMGRAPH_EXEC" ] && [ -x "/entrypoint.sh" ]; then
+      echo "Using /entrypoint.sh"
+      exec /entrypoint.sh "$@"
+    fi
+    
+    # Last resort - search for it
+    if [ -z "$MEMGRAPH_EXEC" ]; then
+      MEMGRAPH_EXEC=$(find / -name memgraph -type f -executable 2>/dev/null | head -1)
+    fi
+    
+    if [ -z "$MEMGRAPH_EXEC" ]; then
+      echo "ERROR: Cannot find memgraph executable!"
+      echo "Contents of common directories:"
+      ls -la /usr/bin/ | grep -i memgraph || true
+      ls -la /usr/local/bin/ | grep -i memgraph || true
+      ls -la /opt/ || true
+      exit 1
+    fi
+    
+    echo "Found memgraph at: $MEMGRAPH_EXEC"
+    
+    # Create necessary directories
+    mkdir -p /var/lib/memgraph /var/log/memgraph
+    
+    # Start memgraph
+    exec "$MEMGRAPH_EXEC" \
+      --log-level=INFO \
+      --also-log-to-stderr \
+      --telemetry-enabled=false \
+      --bolt-server-name-for-init=memgraph \
+      "$@"
+
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: memgraph-secret
+  namespace: autoweave-memory
+type: Opaque
+data:
+  password: YXV0b3dlYXZl  # autoweave
+
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: memgraph
+  namespace: autoweave-memory
+spec:
+  serviceName: memgraph-service
+  replicas: 1
+  selector:
+    matchLabels:
+      app: memgraph
+  template:
+    metadata:
+      labels:
+        app: memgraph
+    spec:
+      containers:
+      - name: memgraph
+        image: memgraph/memgraph:2.11.1
+        ports:
+        - containerPort: 7687
+          name: bolt
+        - containerPort: 3000
+          name: web
+        env:
+        - name: MEMGRAPH_USER
+          value: "memgraph"
+        - name: MEMGRAPH_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: memgraph-secret
+              key: password
+              optional: true
+        command: ["/bin/bash"]
+        args: ["/scripts/start-memgraph.sh"]
+        volumeMounts:
+        - name: memgraph-storage
+          mountPath: /var/lib/memgraph
+        - name: memgraph-log
+          mountPath: /var/log/memgraph
+        - name: start-script
+          mountPath: /scripts
+        resources:
+          requests:
+            memory: "1Gi"
+            cpu: "500m"
+          limits:
+            memory: "2Gi"
+            cpu: "1000m"
+        livenessProbe:
+          tcpSocket:
+            port: 7687
+          initialDelaySeconds: 60
+          periodSeconds: 30
+          failureThreshold: 10
+        readinessProbe:
+          tcpSocket:
+            port: 7687
+          initialDelaySeconds: 30
+          periodSeconds: 10
+      volumes:
+      - name: start-script
+        configMap:
+          name: memgraph-entrypoint-config
+          defaultMode: 0755
+  volumeClaimTemplates:
+  - metadata:
+      name: memgraph-storage
+    spec:
+      accessModes:
+        - ReadWriteOnce
+      resources:
+        requests:
+          storage: 10Gi
+  - metadata:
+      name: memgraph-log
+    spec:
+      accessModes:
+        - ReadWriteOnce
+      resources:
+        requests:
+          storage: 2Gi
