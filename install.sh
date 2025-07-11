@@ -54,52 +54,14 @@ clone_or_update_module() {
             echo -e "${BLUE}Cloning $module...${NC}"
             git clone "$GITHUB_BASE/$module.git" "$module_dir"
         else
-            echo -e "${YELLOW}⚠ Repository $module not accessible${NC}"
-            echo -e "${YELLOW}  Creating placeholder module...${NC}"
-            
-            # Create placeholder module
-            mkdir -p "$module_dir"
-            cd "$module_dir"
-            
-            # Create basic package.json
-            cat > package.json << EOF
-{
-  "name": "@autoweave/$module",
-  "version": "0.0.1",
-  "description": "Placeholder for $module module",
-  "main": "index.js",
-  "scripts": {
-    "start": "node index.js",
-    "dev": "nodemon index.js"
-  },
-  "dependencies": {}
-}
-EOF
-            
-            # Create basic index.js
-            cat > index.js << EOF
-console.log('$module module placeholder - Repository not yet available');
-console.log('This is a temporary placeholder until the actual module is available');
-
-// Export empty module for compatibility
-module.exports = {};
-EOF
-            
-            # Create README
-            cat > README.md << EOF
-# $module (Placeholder)
-
-This is a placeholder module created because the repository is not yet accessible.
-
-Once the actual repository is available, you can update it by running:
-\`\`\`bash
-cd $(dirname "$module_dir")
-rm -rf $module
-git clone $GITHUB_BASE/$module.git
-\`\`\`
-EOF
-            
-            echo -e "${GREEN}✓ Created placeholder for $module${NC}"
+            echo -e "${RED}✗ Repository $module not accessible${NC}"
+            echo -e "${RED}  Please check your internet connection or GitHub access${NC}"
+            echo ""
+            echo "The module repositories are now available at:"
+            echo "  https://github.com/GontrandL/$module"
+            echo ""
+            echo "Try again later or clone manually."
+            exit 1
         fi
     fi
 }
