@@ -75,7 +75,9 @@ echo ""
 
 # Check if modules are installed
 if [ ! -d "$MODULES_DIR/autoweave-core" ]; then
-    echo -e "${RED}✗ AutoWeave modules not found. Please run install.sh first.${NC}"
+    echo -e "${YELLOW}⚠ AutoWeave core module not found${NC}"
+    echo -e "${YELLOW}  Please run install.sh to install all modules${NC}"
+    echo -e "${YELLOW}  Or create the modules manually${NC}"
     exit 1
 fi
 

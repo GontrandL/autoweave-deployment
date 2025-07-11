@@ -85,8 +85,8 @@ spec:
               name: memgraph-secret
               key: password
               optional: true
-        command: ["memgraph"]
-        args: ["--log-level=INFO", "--also-log-to-stderr", "--storage-recover-on-startup=true"]
+        command: ["/usr/lib/memgraph/memgraph"]
+        args: ["--log-level=INFO", "--also-log-to-stderr", "--storage-recover-on-startup=true", "--telemetry-enabled=false"]
         volumeMounts:
         - name: memgraph-storage
           mountPath: /var/lib/memgraph
