@@ -1,0 +1,29 @@
+{
+  "name": "@autoweave/deployment",
+  "version": "0.1.0",
+  "description": "AutoWeave Deployment - Infrastructure and deployment configurations",
+  "scripts": {
+    "install": "./install.sh",
+    "start": "./start-autoweave.sh",
+    "setup:memory": "./scripts/setup-memory-system.sh",
+    "setup:kagent": "./scripts/setup/setup-kagent.sh",
+    "setup:appsmith": "./scripts/setup/setup-appsmith.sh",
+    "setup:all": "npm run setup:memory && npm run setup:kagent && npm run setup:appsmith",
+    "cleanup:test": "./scripts/cleanup/cleanup-test-resources.sh",
+    "deploy:k8s": "kubectl apply -k k8s/",
+    "deploy:docker": "docker build -f docker/Dockerfile -t autoweave:latest ."
+  },
+  "keywords": [
+    "autoweave",
+    "deployment",
+    "kubernetes",
+    "docker",
+    "infrastructure"
+  ],
+  "author": "AutoWeave Team",
+  "license": "MIT",
+  "devDependencies": {
+    "kubectl": "^1.28.0",
+    "helm": "^3.13.0"
+  }
+}

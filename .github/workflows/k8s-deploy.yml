@@ -1,0 +1,52 @@
+name: Kubernetes Deployment
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        default: 'development'
+        type: choice
+        options:
+        - development
+        - staging
+        - production
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup kubectl
+      uses: azure/setup-kubectl@v3
+      with:
+        version: 'latest'
+
+    - name: Configure kubectl
+      run: |
+        echo "${{ secrets.KUBE_CONFIG }}" | base64 -d > kubeconfig
+        export KUBECONFIG=./kubeconfig
+
+    - name: Deploy to Kubernetes
+      run: |
+        # Deploy memory system
+        kubectl apply -f k8s/memory/
+
+        # Deploy AutoWeave
+        kubectl apply -f k8s/autoweave/
+
+        # Deploy SillyTavern
+        kubectl apply -f k8s/sillytavern-manifests.yaml
+
+        # Deploy Appsmith
+        helm repo add appsmith https://helm.appsmith.com
+        helm repo update
+        helm upgrade --install appsmith appsmith/appsmith -f k8s/appsmith-values.yaml
+
+    - name: Wait for deployments
+      run: |
+        kubectl wait --for=condition=available --timeout=600s deployment/qdrant-deployment -n autoweave-memory
+        kubectl wait --for=condition=available --timeout=600s deployment/autoweave -n default
