@@ -48,8 +48,59 @@ clone_or_update_module() {
         cd "$module_dir"
         git pull origin main || git pull origin master
     else
-        echo -e "${BLUE}Cloning $module...${NC}"
-        git clone "$GITHUB_BASE/$module.git" "$module_dir"
+        echo -e "${BLUE}Checking $module availability...${NC}"
+        # Check if repository exists
+        if git ls-remote "$GITHUB_BASE/$module.git" &>/dev/null; then
+            echo -e "${BLUE}Cloning $module...${NC}"
+            git clone "$GITHUB_BASE/$module.git" "$module_dir"
+        else
+            echo -e "${YELLOW}⚠ Repository $module not accessible${NC}"
+            echo -e "${YELLOW}  Creating placeholder module...${NC}"
+            
+            # Create placeholder module
+            mkdir -p "$module_dir"
+            cd "$module_dir"
+            
+            # Create basic package.json
+            cat > package.json << EOF
+{
+  "name": "@autoweave/$module",
+  "version": "0.0.1",
+  "description": "Placeholder for $module module",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "nodemon index.js"
+  },
+  "dependencies": {}
+}
+EOF
+            
+            # Create basic index.js
+            cat > index.js << EOF
+console.log('$module module placeholder - Repository not yet available');
+console.log('This is a temporary placeholder until the actual module is available');
+
+// Export empty module for compatibility
+module.exports = {};
+EOF
+            
+            # Create README
+            cat > README.md << EOF
+# $module (Placeholder)
+
+This is a placeholder module created because the repository is not yet accessible.
+
+Once the actual repository is available, you can update it by running:
+\`\`\`bash
+cd $(dirname "$module_dir")
+rm -rf $module
+git clone $GITHUB_BASE/$module.git
+\`\`\`
+EOF
+            
+            echo -e "${GREEN}✓ Created placeholder for $module${NC}"
+        fi
     fi
 }
 
@@ -73,6 +124,43 @@ fi
 # Check Python
 if command_exists python3; then
     echo -e "${GREEN}✓ Python3 $(python3 --version)${NC}"
+    
+    # Check for python3-venv
+    if ! python3 -m venv --help >/dev/null 2>&1; then
+        echo -e "${YELLOW}⚠ python3-venv not installed${NC}"
+        echo -e "${YELLOW}  Installing python3-venv...${NC}"
+        
+        # Detect OS and install venv
+        if command_exists apt-get; then
+            sudo apt-get update && sudo apt-get install -y python3-venv
+        elif command_exists yum; then
+            sudo yum install -y python3-venv
+        elif command_exists dnf; then
+            sudo dnf install -y python3-venv
+        else
+            echo -e "${RED}✗ Cannot install python3-venv automatically${NC}"
+            echo "Please install python3-venv manually and re-run this script"
+            exit 1
+        fi
+    else
+        echo -e "${GREEN}✓ python3-venv available${NC}"
+    fi
+    
+    # Check for pip
+    if ! command_exists pip3; then
+        echo -e "${YELLOW}⚠ pip3 not installed${NC}"
+        echo -e "${YELLOW}  Installing pip3...${NC}"
+        
+        if command_exists apt-get; then
+            sudo apt-get install -y python3-pip
+        elif command_exists yum; then
+            sudo yum install -y python3-pip
+        else
+            echo -e "${RED}✗ Cannot install pip3 automatically${NC}"
+            echo "Please install python3-pip manually and re-run this script"
+            exit 1
+        fi
+    fi
 else
     echo -e "${RED}✗ Python3 not found${NC}"
     exit 1
@@ -81,8 +169,28 @@ fi
 # Check Docker
 if command_exists docker; then
     echo -e "${GREEN}✓ Docker $(docker --version | cut -d' ' -f3 | tr -d ',')${NC}"
+    
+    # Check Docker permissions
+    if ! docker info >/dev/null 2>&1; then
+        echo -e "${YELLOW}⚠ Docker installed but cannot connect to daemon${NC}"
+        echo -e "${YELLOW}  This might be a permission issue.${NC}"
+        
+        # Check if user is in docker group
+        if ! groups | grep -q docker; then
+            echo -e "${YELLOW}  Adding user to docker group...${NC}"
+            sudo usermod -aG docker $USER
+            echo -e "${YELLOW}  Please log out and log back in for changes to take effect${NC}"
+            echo -e "${YELLOW}  Or run: newgrp docker${NC}"
+        else
+            echo -e "${YELLOW}  User is in docker group but daemon is not accessible${NC}"
+            echo -e "${YELLOW}  Try: sudo systemctl start docker${NC}"
+        fi
+    else
+        echo -e "${GREEN}✓ Docker daemon accessible${NC}"
+    fi
 else
     echo -e "${YELLOW}⚠ Docker not found (optional but recommended)${NC}"
+    echo -e "${YELLOW}  To install: curl -fsSL https://get.docker.com | sh${NC}"
 fi
 
 # Check kubectl

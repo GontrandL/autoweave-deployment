@@ -85,16 +85,70 @@ echo ""
 echo -e "${YELLOW}📋 Step 2: Starting infrastructure services${NC}"
 echo ""
 
-# Start Docker services if available
-if command -v docker >/dev/null 2>&1; then
-    # Check if docker daemon is running
-    if ! docker info >/dev/null 2>&1; then
-        echo -e "${RED}✗ Docker daemon is not running. Please start Docker.${NC}"
-        echo "  sudo systemctl start docker"
-        exit 1
+# Detect deployment method
+DEPLOYMENT_METHOD=""
+USE_KUBERNETES=false
+USE_DOCKER=false
+
+# Check if services are already running in Kubernetes
+if command -v kubectl >/dev/null 2>&1 && kubectl cluster-info >/dev/null 2>&1; then
+    if kubectl get pods -n autoweave-memory 2>/dev/null | grep -q Running; then
+        echo -e "${GREEN}✓ Memory services detected in Kubernetes${NC}"
+        USE_KUBERNETES=true
+        DEPLOYMENT_METHOD="kubernetes"
     fi
+fi
+
+# Check if services are already running in Docker
+if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
+    if docker ps 2>/dev/null | grep -q "autoweave-"; then
+        echo -e "${GREEN}✓ Memory services detected in Docker${NC}"
+        USE_DOCKER=true
+        DEPLOYMENT_METHOD="docker"
+    fi
+fi
+
+# If no services are running, ask user for preference
+if [ "$DEPLOYMENT_METHOD" = "" ]; then
+    echo -e "${YELLOW}Select deployment method:${NC}"
+    echo "1) Kubernetes (recommended for production)"
+    echo "2) Docker Compose (recommended for development)"
+    echo "3) Skip memory services (not recommended)"
+    read -p "Choice (1-3): " DEPLOY_CHOICE
     
-    # Start memory systems
+    case $DEPLOY_CHOICE in
+        1)
+            if command -v kubectl >/dev/null 2>&1 && kubectl cluster-info >/dev/null 2>&1; then
+                USE_KUBERNETES=true
+                DEPLOYMENT_METHOD="kubernetes"
+            else
+                echo -e "${RED}✗ Kubernetes not available${NC}"
+                exit 1
+            fi
+            ;;
+        2)
+            if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
+                USE_DOCKER=true
+                DEPLOYMENT_METHOD="docker"
+            else
+                echo -e "${RED}✗ Docker not available${NC}"
+                exit 1
+            fi
+            ;;
+        3)
+            echo -e "${YELLOW}⚠ Running without memory persistence${NC}"
+            DEPLOYMENT_METHOD="none"
+            ;;
+        *)
+            echo -e "${RED}Invalid choice${NC}"
+            exit 1
+            ;;
+    esac
+fi
+
+# Start services based on deployment method
+if [ "$USE_DOCKER" = true ]; then
+    # Start Docker services
     if [ -f "$BASE_DIR/docker/docker-compose.yml" ]; then
         echo -e "${BLUE}Starting memory systems with Docker Compose...${NC}"
         docker-compose -f "$BASE_DIR/docker/docker-compose.yml" up -d
@@ -103,24 +157,27 @@ if command -v docker >/dev/null 2>&1; then
         wait_for_service "Qdrant" "${QDRANT_PORT:-6333}"
         wait_for_service "Redis" "${REDIS_PORT:-6379}"
     else
-        echo -e "${YELLOW}⚠ docker-compose.yml not found, skipping memory systems${NC}"
+        echo -e "${YELLOW}⚠ docker-compose.yml not found${NC}"
     fi
-else
-    echo -e "${YELLOW}⚠ Docker not available, running without memory persistence${NC}"
+elif [ "$USE_KUBERNETES" = true ]; then
+    echo -e "${BLUE}Using Kubernetes deployment${NC}"
+    echo -e "${YELLOW}Setting up port-forwards...${NC}"
+    
+    # Kill any existing port-forwards
+    pkill -f "kubectl port-forward" 2>/dev/null || true
+    
+    # Start port-forwards in background
+    kubectl port-forward -n autoweave-memory service/qdrant-service ${QDRANT_PORT:-6333}:6333 >/dev/null 2>&1 &
+    kubectl port-forward -n autoweave-memory service/redis-service ${REDIS_PORT:-6379}:6379 >/dev/null 2>&1 &
+    
+    # Wait a moment for port-forwards to establish
+    sleep 3
+    
+    # Test connections
+    wait_for_service "Qdrant" "${QDRANT_PORT:-6333}"
+    wait_for_service "Redis" "${REDIS_PORT:-6379}"
 fi
 
-# Start Kubernetes services if kubectl is available
-if command -v kubectl >/dev/null 2>&1 && kubectl cluster-info >/dev/null 2>&1; then
-    echo -e "${BLUE}Kubernetes cluster detected${NC}"
-    
-    if [ -d "$BASE_DIR/k8s" ]; then
-        echo "Applying Kubernetes manifests..."
-        kubectl apply -f "$BASE_DIR/k8s/namespace.yaml" 2>/dev/null || true
-        kubectl apply -f "$BASE_DIR/k8s/memory/" 2>/dev/null || true
-    fi
-else
-    echo -e "${YELLOW}⚠ Kubernetes not available or configured${NC}"
-fi
 
 echo ""
 echo -e "${YELLOW}📋 Step 3: Starting AutoWeave Core${NC}"

@@ -65,6 +65,9 @@ spec:
       labels:
         app: memgraph
     spec:
+      securityContext:
+        fsGroup: 1000
+        runAsNonRoot: true
       containers:
       - name: memgraph
         image: memgraph/memgraph:latest
@@ -89,6 +92,10 @@ spec:
           mountPath: /var/lib/memgraph
         - name: memgraph-log
           mountPath: /var/log/memgraph
+        securityContext:
+          runAsUser: 1000
+          runAsGroup: 1000
+          allowPrivilegeEscalation: false
         resources:
           requests:
             memory: "1Gi"
